@@ -54,8 +54,23 @@ DETECTOR_MAX_TOKENS = 400
 # down BEFORE you code it, and to put the numbers in your README. Whatever you
 # decide, it goes here.
 
-WEIGHT_MODEL_SIGNAL = 0.5
-WEIGHT_STYLE_SIGNAL = 0.5
+WEIGHT_MODEL_SIGNAL = 0.6
+WEIGHT_STYLE_SIGNAL = 0.4
+
+# When the two signals are this far apart or more, they're treated as
+# disagreeing and the combined score is pulled toward 0.5 by this factor
+# (0.5 = halfway back to the middle). See scoring.combine_signals.
+DISAGREEMENT_GAP = 0.4
+DISAGREEMENT_SHRINK = 0.5
+
+
+# ─── Input limits ────────────────────────────────────────────────────────────
+# Anything outside these gets a 4xx with a reason, never a crash.
+
+MIN_WORDS = 5             # below this there's nothing to score
+MAX_TEXT_CHARS = 20_000   # roughly 3,500 words; longer is refused with 413
+MAX_CREATOR_ID_CHARS = 100
+MAX_REASONING_CHARS = 5_000
 
 
 # ─── Thresholds (Milestone 5) ────────────────────────────────────────────────
@@ -72,7 +87,8 @@ WEIGHT_STYLE_SIGNAL = 0.5
 # that decide who pays for it.
 
 HUMAN_THRESHOLD = 0.35
-AI_THRESHOLD = 0.65
+AI_THRESHOLD = 0.70   # set higher than 0.65 so the unsure band leans toward
+                      # protecting writers: an accusation needs a stronger score
 
 # ⚠️ One thing that catches people out in Milestone 5. A weighted average can
 # only land between its two inputs — so while `style_signal` is still the stub

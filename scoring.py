@@ -52,11 +52,26 @@ def combine_signals(model_score: float, style_score: float) -> float:
     The weights in config.py are placeholders. Change them, or ignore them and
     write a different rule.
     """
-    # TODO: replace this
-    return (
+    # The rule:
+    #   1. Weighted average: model 0.6, style 0.4 (config.WEIGHT_*). The model
+    #      signal gets more weight because the style signal is cheap to move
+    #      on purpose (typos, chopped sentences) and is noisier on short text.
+    #   2. Disagreement means uncertainty. If the two signals are
+    #      DISAGREEMENT_GAP or more apart, the result is pulled halfway back
+    #      toward 0.5. A 0.9 / 0.2 split lands in "unsure" instead of being
+    #      allowed to tip into an accusation.
+    model_score = min(max(float(model_score), 0.0), 1.0)
+    style_score = min(max(float(style_score), 0.0), 1.0)
+
+    combined = (
         config.WEIGHT_MODEL_SIGNAL * model_score
         + config.WEIGHT_STYLE_SIGNAL * style_score
-    )
+    ) / (config.WEIGHT_MODEL_SIGNAL + config.WEIGHT_STYLE_SIGNAL)
+
+    if abs(model_score - style_score) >= config.DISAGREEMENT_GAP:
+        combined = 0.5 + (combined - 0.5) * config.DISAGREEMENT_SHRINK
+
+    return round(min(max(combined, 0.0), 1.0), 4)
 
 
 def score_to_label(score: float) -> tuple[str, str]:
@@ -85,12 +100,31 @@ def score_to_label(score: float) -> tuple[str, str]:
     think if they got it on their own work. That question is the whole
     milestone.
     """
-    # TODO: replace this — thresholds are in config.py
+    # Thresholds are in config.py. Every score from 0.0 to 1.0 lands in
+    # exactly one branch, so there are no gaps.
     if score >= config.AI_THRESHOLD:
-        return "ai", "PLACEHOLDER — write the high-confidence AI label."
+        return "ai", LABEL_AI
     if score <= config.HUMAN_THRESHOLD:
-        return "human", "PLACEHOLDER — write the high-confidence human label."
-    return "unsure", "PLACEHOLDER — write the unsure label."
+        return "human", LABEL_HUMAN
+    return "unsure", LABEL_UNSURE
+
+
+# The exact text a reader sees. Draft wording — rewrite these in your own words.
+LABEL_HUMAN = (
+    "We think this was written by a person. Our automated check found nothing "
+    "that suggests AI was used."
+)
+LABEL_UNSURE = (
+    "We couldn't tell whether this was written by a person or with AI help. "
+    "That happens often and it isn't an accusation. Nothing about how this "
+    "piece is shown has changed. If you'd like a person to take a look, you "
+    "can ask for a review."
+)
+LABEL_AI = (
+    "Our automated check thinks this was probably written with AI. Checks like "
+    "this can be wrong, especially for plain or simple writing. If you wrote "
+    "it yourself, you can ask for a review and a person will look at it."
+)
 
 
 def label_ranges() -> list[tuple[str, str]]:
