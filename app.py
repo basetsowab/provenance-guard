@@ -33,6 +33,19 @@ import config
 
 app = Flask(__name__)
 
+# Refuse request bodies far bigger than any allowed text before parsing them.
+app.config["MAX_CONTENT_LENGTH"] = 1_000_000  # bytes
+
+
+@app.errorhandler(413)
+def body_too_large(exc):
+    """A body over MAX_CONTENT_LENGTH gets a JSON answer and a log entry."""
+    audit.log_rejection(creator_id="unknown", reason="body_too_large", http_status=413)
+    return jsonify({
+        "error": "body_too_large",
+        "message": f"Request is too large. 'text' must be at most {config.MAX_TEXT_CHARS} characters.",
+    }), 413
+
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
 # Off until you turn it on. In unit 8, Milestone 1:
@@ -199,17 +212,91 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True) or {}
+    import detector
+    import scoring
+    import stylometry
 
-    # TODO: delete this and build the route.
+    payload = request.get_json(silent=True)
+
+    # ── Bad input: refuse with a reason and leave a trace, never crash ──
+    if not isinstance(payload, dict):
+        return _reject("unknown", "invalid_json", 400,
+                       "Send a JSON object with 'text' and 'creator_id'.")
+
+    creator_id = payload.get("creator_id")
+    text = payload.get("text")
+
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return _reject("unknown", "missing_creator_id", 400,
+                       "'creator_id' is required and must be a non-empty string.")
+    creator_id = creator_id.strip()
+    if len(creator_id) > config.MAX_CREATOR_ID_CHARS:
+        return _reject(creator_id[:config.MAX_CREATOR_ID_CHARS], "creator_id_too_long", 400,
+                       f"'creator_id' must be at most {config.MAX_CREATOR_ID_CHARS} characters.")
+
+    if not isinstance(text, str) or not text.strip():
+        return _reject(creator_id, "missing_text", 400,
+                       "'text' is required and must be a non-empty string.")
+    if len(text) > config.MAX_TEXT_CHARS:
+        return _reject(creator_id, "text_too_long", 413,
+                       f"'text' must be at most {config.MAX_TEXT_CHARS} characters.",
+                       text_length=len(text))
+    if len(stylometry.words(text)) < config.MIN_WORDS:
+        return _reject(creator_id, "text_too_short", 422,
+                       f"'text' needs at least {config.MIN_WORDS} words to be checked.",
+                       text_length=len(text))
+
+    # ── Signal one: how predictable the text is to a language model ──
+    try:
+        model_score = detector.model_signal(text)
+    except detector.DetectorUnavailable as exc:
+        return _reject(creator_id, "detector_unavailable", 503,
+                       "The checker isn't available right now. Try again shortly.",
+                       detail=str(exc))
+    except ValueError:
+        return _reject(creator_id, "text_too_short", 422,
+                       "'text' is too short to check. A few sentences at least.",
+                       text_length=len(text))
+
+    # ── Signal two: the shape of the text ──
+    style_score = stylometry.style_signal(text)
+
+    # ── One number, then words a person can read ──
+    combined = scoring.combine_signals(model_score, style_score)
+    guess, label = scoring.score_to_label(combined)
+
+    content_id = str(uuid.uuid4())
+    audit.log_decision(
+        content_id=content_id,
+        creator_id=creator_id,
+        guess=guess,
+        model_score=model_score,
+        style_score=style_score,
+        combined_score=combined,
+        label=label,
+        status="decided",
+        text_length=len(text),
+    )
+
+    # `confidence` is the combined score: 0.0 = confidently human,
+    # 1.0 = confidently AI, middle values = unsure.
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /submit isn't built yet — see the TODO in app.py.",
-        "you_sent": {
-            "text_length": len(payload.get("text", "")),
-            "creator_id": payload.get("creator_id"),
-        },
-    }), 501
+        "content_id": content_id,
+        "creator_id": creator_id,
+        "guess": guess,
+        "confidence": combined,
+        "label": label,
+        "model_score": model_score,
+        "style_score": style_score,
+        "status": "decided",
+    })
+
+
+def _reject(creator_id, reason, http_status, message, **extra):
+    """Log a refused request, then tell the caller why it was refused."""
+    audit.log_rejection(creator_id=creator_id, reason=reason,
+                        http_status=http_status, **extra)
+    return jsonify({"error": reason, "message": message}), http_status
 
 
 @app.post("/appeal")
@@ -232,14 +319,51 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_json",
+                        "message": "Send a JSON object with 'content_id' and 'reasoning'."}), 400
 
-    # TODO: delete this and build the route.
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
+
+    if not isinstance(content_id, str) or not content_id.strip():
+        return jsonify({"error": "missing_content_id",
+                        "message": "'content_id' is required."}), 400
+    content_id = content_id.strip()
+
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return jsonify({"error": "missing_reasoning",
+                        "message": "Tell us briefly why you think the result is wrong."}), 400
+    reasoning = reasoning.strip()
+    if len(reasoning) > config.MAX_REASONING_CHARS:
+        return jsonify({"error": "reasoning_too_long",
+                        "message": f"Please keep it under {config.MAX_REASONING_CHARS} characters."}), 413
+
+    # Only an original decision counts as "exists". Appeal entries alone don't.
+    history = audit.entries_for(content_id)
+    decision = next((e for e in history if e.get("event") is None), None)
+    if decision is None:
+        return jsonify({"error": "content_not_found",
+                        "message": f"No submission found with content_id '{content_id}'."}), 404
+
+    entry = audit.log_appeal(
+        content_id=content_id,
+        creator_id=decision.get("creator_id", "unknown"),
+        reasoning=reasoning,
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": "under_review",
+        "previous_status": history[-1].get("status"),
+        "original_guess": decision.get("guess"),
+        "appealed_at": entry["timestamp"],
+        "message": (
+            "Thanks. Your appeal has been recorded and a person will review "
+            "this piece. Nothing about it changes while that happens."
+        ),
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────
