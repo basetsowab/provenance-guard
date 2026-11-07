@@ -39,7 +39,31 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
+Provenance Guard is a small web service a writing site can call to get a
+cautious guess about whether a piece of text was written by a person or with
+AI. A submission takes this path:
 
+1. **Arrives at `POST /submit`** (`app.py::submit`) as JSON with `text` and
+   `creator_id`.
+2. **Gets checked for bad input.** A missing or empty field, a body that isn't
+   a JSON object, fewer than 5 words, or more than 20,000 characters is refused
+   with a 4xx error and a plain reason. The refusal is still written to the
+   audit log.
+3. **Signal one, the model signal** (`detector.py::model_signal`). A local
+   GPT-2 model measures how predictable the text is. Output: 0–1, where higher
+   means more AI-like.
+4. **Signal two, the style signal** (`stylometry.py::style_signal`). This
+   measures the shape of the text: sentence length spread, vocabulary variety
+   and punctuation. Output: 0–1, where higher means more AI-like.
+5. **The combining rule** (`scoring.py::combine_signals`) turns the two scores
+   into one confidence score from 0 to 1.
+6. **The label** (`scoring.py::score_to_label`) turns that score into one of
+   three plain-English messages: human, unsure or AI.
+7. **Logged and returned.** The decision, both signal scores and the combined
+   score are written to `logs/audit.jsonl` with a new `content_id`. The writer
+   gets JSON back with the guess, the confidence, the label and both scores.
+   If they disagree, they send that `content_id` to `POST /appeal`, which
+   records their reasoning and moves the item to `under_review`.
 
 ---
 
@@ -53,28 +77,64 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** How predictable the text is to a language model
+(perplexity under GPT-2, run locally). Low perplexity maps to a high score.
+`detector.py::model_signal`.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** A language model
+writes by picking likely next words, so text a model produced tends to be text
+a model finds easy to predict. People make odder, more specific word choices.
 
-**What it can't see:**
+**What it can't see:** Who actually wrote it. It rewards common words in short,
+ordinary sentences, and plenty of people write that way: second-language
+writers, younger writers, anyone writing plainly. Their work scores as
+machine-like. The reverse also happens: AI text prompted to use rare or ornate
+words reads as human.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** The shape of the text, without reading it
+(`stylometry.py::style_signal`). Three measures, each mapped onto 0–1:
 
-**Why that might differ between human and AI writing:**
+| Measure | What it is | Reads as AI at | Reads as human at | Weight |
+|---|---|---|---|---|
+| Sentence length spread | std dev ÷ mean of words per sentence | ≤ 0.25 | ≥ 0.65 | 0.50 |
+| Vocabulary variety | unique ÷ total words, averaged over 50-word windows | ≤ 0.66 | ≥ 0.80 | 0.25 |
+| Expressive punctuation | `; : — – ( ) ! ? " …` per 100 words (not `.` or `,`) | 0 | ≥ 4 | 0.25 |
 
-**What it can't see:**
+Values in between are scaled linearly. Text with only one sentence gets 0.5 for
+spread (no evidence either way). Text under 120 words is pulled toward 0.5 in
+proportion to its length, because the measures are mostly noise on very short
+text.
+
+**Why that might differ between human and AI writing:** Generated prose tends
+toward even, mid-length sentences and plain punctuation. Human writing is
+lumpier: a three-word sentence next to a forty-word one, plus dashes, asides and
+questions.
+
+**What it can't see:** Meaning. Anything that changes the shape without
+changing the substance moves it: breaking up sentences, adding dashes or typos,
+pasting in a quotation. It also penalises people who write in short, even,
+simply punctuated sentences, which is the same group signal one already
+penalises. In testing, vocabulary variety barely separated anything on short
+texts; the AI sample actually had the highest variety.
 
 ### The combining rule
 
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** A weighted average, weighted toward the model signal because the
+style signal is cheaper to game and noisier on short text. If the two signals
+disagree strongly, that disagreement is treated as uncertainty: the result is
+pulled halfway back toward 0.5, so a split can't tip into an accusation.
 
-**The numbers:**
+**The numbers** (all in `config.py`):
+
+- `combined = 0.6 × model_score + 0.4 × style_score`
+- If `|model_score − style_score| ≥ 0.4`, then `combined = 0.5 + (combined − 0.5) × 0.5`
+- Thresholds: human ≤ 0.35, unsure between, AI ≥ 0.70. The AI threshold is set
+  higher than the human one is low, so an accusation needs a stronger score.
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -83,6 +143,24 @@
 
 **A case where my two signals split, and what my rule does with it:**
 
+A vivid personal paragraph I'd call clearly human (short anecdote, dashes, a
+parenthetical aside) scored **model 0.49, style 0.21**. The model was unsure;
+the style signal said human. The weighted average gave **0.38: "unsure"**,
+just above the human threshold. The gap was 0.28, below 0.4, so the
+disagreement rule didn't fire.
+
+Calibration results from the four Milestone 4 inputs:
+
+| Input | Model | Style | Combined | Label |
+|---|---|---|---|---|
+| Clearly AI | 0.877 | 0.629 | 0.778 | AI |
+| Clearly human | 0.491 | 0.209 | 0.378 | unsure |
+| Plain, simple human writing | 0.824 | 0.600 | 0.734 | **AI (false positive)** |
+| Lightly edited AI | 0.717 | 0.577 | 0.661 | unsure |
+
+The plain human paragraph is the false positive the model signal's blind spot
+predicts. Both signals agreed it looked AI-like, so the disagreement rule
+couldn't help.
 
 
 ---
@@ -96,9 +174,11 @@
 
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
-| high-confidence human |  |  |
-| unsure |  |  |
-| high-confidence AI |  |  |
+| high-confidence human | 0.00 – 0.35 | We think this was written by a person. Our automated check found nothing that suggests AI was used. |
+| unsure | above 0.35, below 0.70 | We couldn't tell whether this was written by a person or with AI help. That happens often and it isn't an accusation. Nothing about how this piece is shown has changed. If you'd like a person to take a look, you can ask for a review. |
+| high-confidence AI | 0.70 – 1.00 | Our automated check thinks this was probably written with AI. Checks like this can be wrong, especially for plain or simple writing. If you wrote it yourself, you can ask for a review and a person will look at it. |
+
+The text lives in `scoring.py` (`LABEL_HUMAN`, `LABEL_UNSURE`, `LABEL_AI`).
 
 **Why I worded the "unsure" one this way:**
 <!-- It's the hardest of the three. It has to admit uncertainty without
