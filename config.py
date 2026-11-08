@@ -87,8 +87,10 @@ MAX_REASONING_CHARS = 5_000
 # that decide who pays for it.
 
 HUMAN_THRESHOLD = 0.35
-AI_THRESHOLD = 0.70   # set higher than 0.65 so the unsure band leans toward
-                      # protecting writers: an accusation needs a stronger score
+AI_THRESHOLD = 0.80   # unit 8 improvement: was 0.70. All six human pieces the
+                      # attack set got labelled AI scored 0.72–0.79, so 0.80
+                      # moves them to "unsure". Cost: AI text scoring 0.70–0.80
+                      # is no longer flagged either.
 
 # ⚠️ One thing that catches people out in Milestone 5. A weighted average can
 # only land between its two inputs — so while `style_signal` is still the stub
