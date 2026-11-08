@@ -133,7 +133,8 @@ pulled halfway back toward 0.5, so a split can't tip into an accusation.
 
 - `combined = 0.6 × model_score + 0.4 × style_score`
 - If `|model_score − style_score| ≥ 0.4`, then `combined = 0.5 + (combined − 0.5) × 0.5`
-- Thresholds: human ≤ 0.35, unsure between, AI ≥ 0.70. The AI threshold is set
+- Thresholds: human ≤ 0.35, unsure between, AI ≥ 0.80 (0.70 in unit 7; raised in
+  unit 8, see The Improvement). The AI threshold is set
   higher than the human one is low, so an accusation needs a stronger score.
 
 **Where it lives:** `scoring.py::combine_signals`
@@ -175,8 +176,8 @@ couldn't help.
 | Label | Score range | The exact text a reader sees |
 |---|---|---|
 | high-confidence human | 0.00 – 0.35 | We think this was written by a person. Our automated check found nothing that suggests AI was used. |
-| unsure | above 0.35, below 0.70 | We couldn't tell whether this was written by a person or with AI help. That happens often and it isn't an accusation. Nothing about how this piece is shown has changed. If you'd like a person to take a look, you can ask for a review. |
-| high-confidence AI | 0.70 – 1.00 | Our automated check thinks this was probably written with AI. Checks like this can be wrong, especially for plain or simple writing. If you wrote it yourself, you can ask for a review and a person will look at it. |
+| unsure | above 0.35, below 0.80 (unit 7: below 0.70) | We couldn't tell whether this was written by a person or with AI help. That happens often and it isn't an accusation. Nothing about how this piece is shown has changed. If you'd like a person to take a look, you can ask for a review. |
+| high-confidence AI | 0.80 – 1.00 (unit 7: 0.70 – 1.00) | Our automated check thinks this was probably written with AI. Checks like this can be wrong, especially for plain or simple writing. If you wrote it yourself, you can ask for a review and a person will look at it. |
 
 The text lives in `scoring.py` (`LABEL_HUMAN`, `LABEL_UNSURE`, `LABEL_AI`).
 
@@ -447,15 +448,44 @@ that produced it:
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** One line in `config.py`: `AI_THRESHOLD` from 0.70 to
+0.80. Nothing else moved: same signals, same weights, same disagreement rule,
+same labels.
 
-**Which diagnosis pointed at it:**
+**Which diagnosis pointed at it:** The false-positive pattern. Six of eight
+human pieces (formal register, non-native writer, rubric essay, technical docs,
+formal template, deliberate repetition) were labelled AI with combined scores
+of 0.720–0.789. In every one, both signals agreed (model 0.74–0.88), so the
+disagreement rule never fired and the label mapping was the last stage that
+could stop the accusation. The only AI text that was caught scored 0.871.
 
 ### Attack Run — After
 
-<!-- Same format. `run_attacks.py --label after` -->
+`python run_attacks.py --set attack_set --label after` →
+`results/attack_run_2026-11-07_2005_after.md`. Every score is identical to the
+before run; only labels near the threshold changed.
 
+| Family | Held before | Held after | Broke before | Broke after |
+|---|---|---|---|---|
+| evasion | 1 | 1 | 9 | 9 |
+| false_positive | 2 | **8** | 6 | **0** |
+| prompt_injection | 3 | 3 | 3 | 3 |
+| malformed | 20 | 20 | 0 | 0 |
+| flood_same_creator | 12 | 12 | 0 | 0 |
+| **Total** | **38** | **44** | **18** | **12** |
 
+Rows whose label changed:
+
+| ID | Combined | Before | After | Verdict before → after |
+|---|---|---|---|---|
+| FP02 | 0.720 | ai | unsure | BROKE → HELD |
+| FP03 | 0.725 | ai | unsure | BROKE → HELD |
+| FP04 | 0.723 | ai | unsure | BROKE → HELD |
+| FP05 | 0.789 | ai | unsure | BROKE → HELD |
+| FP06 | 0.727 | ai | unsure | BROKE → HELD |
+| FP07 | 0.729 | ai | unsure | BROKE → HELD |
+
+All malformed and flood rows returned the same status codes as before.
 
 **Did it help, and how do I know:**
 
