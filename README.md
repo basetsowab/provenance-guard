@@ -492,6 +492,15 @@ All malformed and flood rows returned the same status codes as before.
 <!-- Widening the unsure band usually fixes one problem and creates another.
      Reporting that trade honestly is worth full credit. -->
 
+For false positives, yes: 0 of 8 human pieces are labelled AI now, against 6
+of 8 before, from the same scores. It did nothing for evasion (still 9 of 10
+broke), because those were already below 0.70.
+
+The cost: the AI label is now much harder to reach. In the attack set only
+EV10 (0.871) gets it. My unit 7 "clearly AI" calibration paragraph scored
+0.778, so it would now be "unsure" instead of flagged. The fix moved the
+accused human writers into "unsure" without separating them from AI text:
+human pieces still score 0.72–0.79, higher than most AI text in the set.
 
 
 ---
