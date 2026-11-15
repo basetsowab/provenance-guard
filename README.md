@@ -752,3 +752,21 @@ presenting every prediction as a fact.
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+---
+
+## Capstone
+
+**What This Extends**
+
+Provenance Guard, the AI-text detection service from Project 4 (units 7–8). It already refuses bad *input* cleanly: invalid JSON, a missing or blank `creator_id` or `text`, text that's too long or too short, and rate-limited requests all get a 4xx JSON answer and an audit-log entry. What it didn't handle was the service's *own* parts failing. If `detector.model_signal` raised anything other than `DetectorUnavailable`/`ValueError`, hung, or ran slowly, or if the audit log couldn't be written, `/submit` returned Flask's default HTML 500 page (or just kept the caller waiting) and left no record. What's new is internal-failure handling on `/submit`: a time limit on the detector, a JSON answer plus a record for any unexpected exception, and a refusal to hand out a `content_id` that was never written to the audit log (an id that can't be appealed). Every request also gets a structured request-log record so the failures can be counted afterwards.
+
+**The Shape**
+
+B — Harden against failure. The bad path here is the service's internals breaking (the detector raising, hanging, or the audit log being unwritable) rather than the caller sending bad input, which unit 8 already covered.
+
+Out of scope:
+- **The signals, the weights and the thresholds.** `detector.py`'s scoring, `stylometry.py` and `scoring.py` aren't changed. Whether a label is *right* isn't this unit's question.
+- **Retries.** The detector is a local model, not a remote API. Retrying a crash or a hang on the same machine with the same input mostly reproduces it, so a failure is reported, not retried.
+- **Hosting.** The detector loads gpt2 (~550 MB on disk, more in memory) inside the process, which doesn't fit the course's 512 MB free tier. This runs on Path B, local with logs.
+- **`/appeal` and the rate limiter.** Their behaviour stays as unit 8 left it (rate limits still in `memory://`).
