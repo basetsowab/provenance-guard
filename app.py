@@ -26,10 +26,11 @@ Routes:
 
 import uuid
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 
 import audit
 import config
+import guard
 
 app = Flask(__name__)
 
@@ -247,8 +248,15 @@ def submit():
                        text_length=len(text))
 
     # ── Signal one: how predictable the text is to a language model ──
+    # Capstone: the call runs under a time limit, and any exception from it is
+    # a named 503 — not Flask's HTML 500, and not a caller left waiting.
     try:
-        model_score = detector.model_signal(text)
+        # A cold load (10-20s) isn't a hang, so it happens outside the limit.
+        if detector._model is None:
+            detector.warm_up()
+        model_score, detector_s = guard.run_with_timeout(
+            detector.model_signal, text, timeout=config.DETECTOR_TIMEOUT_S)
+        g.detector_ms = round(detector_s * 1000)
     except detector.DetectorUnavailable as exc:
         return _reject(creator_id, "detector_unavailable", 503,
                        "The checker isn't available right now. Try again shortly.",
@@ -257,6 +265,18 @@ def submit():
         return _reject(creator_id, "text_too_short", 422,
                        "'text' is too short to check. A few sentences at least.",
                        text_length=len(text))
+    except guard.DetectorTimeout as exc:
+        return _reject(creator_id, "detector_timeout", 503,
+                       f"The checker took longer than {config.DETECTOR_TIMEOUT_S:.0f} "
+                       "seconds, so this piece wasn't checked and nothing was "
+                       "recorded against it. Try again in a minute.",
+                       detail=str(exc), text_length=len(text))
+    except Exception as exc:  # noqa: BLE001 — any other detector crash
+        return _reject(creator_id, "detector_failed", 503,
+                       "The checker hit an error on this piece, so it wasn't "
+                       "checked and nothing was recorded against it. Try again; "
+                       "if it keeps happening, the text itself may be the trigger.",
+                       detail=f"{type(exc).__name__}: {exc}", text_length=len(text))
 
     # ── Signal two: the shape of the text ──
     style_score = stylometry.style_signal(text)
@@ -393,6 +413,17 @@ def main():
     print(f'  curl -X POST http://{config.HOST}:{config.PORT}/ping \\')
     print('    -H "Content-Type: application/json" \\')
     print("    -d '{\"message\": \"hello\"}'")
+    print()
+    if config.FAULT_INJECTION_ENABLED:
+        print("  ⚠️  fault injection ON — requests may send X-Fault (see guard.py)")
+    if config.WARM_UP_ON_START:
+        # Load the model now, so the detector time limit only ever sees warm
+        # calls. A cold load is 10-20s and would look exactly like a hang.
+        import detector
+        try:
+            print(f"  warming up: {detector.warm_up()}")
+        except detector.DetectorUnavailable as exc:
+            print(f"  warm-up failed, /submit will answer 503: {exc}")
     print()
     # debug=True hands out an interactive debugger, so it's local-only — see config.py
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)

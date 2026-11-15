@@ -127,8 +127,25 @@ RATE_LIMIT_PER_DAY = 40
 RATE_LIMIT_STORAGE = "memory://"
 
 
+# ─── Internal-failure hardening (CAPSTONE) ──────────────────────────────────
+# How long one detector call may take once the model is loaded. A warm call
+# takes about a second on a laptop CPU, so 10s is a generous ceiling: anything
+# past it is a hang, not a slow request, and the caller gets a 503 instead of
+# waiting forever. The first call (model load) is done at startup instead.
+DETECTOR_TIMEOUT_S = float(os.getenv("AI201_DETECTOR_TIMEOUT", "10"))
+
+# Load the model before serving, so the first real request isn't the 10-20s
+# cold load and isn't mistaken for a hang. AI201_WARM_UP=0 skips it.
+WARM_UP_ON_START = os.getenv("AI201_WARM_UP", "1") == "1"
+
+# Deliberate fault injection for testing the bad paths. Off unless set; see
+# guard.py for the fault names and the X-Fault header.
+FAULT_INJECTION_ENABLED = os.getenv("AI201_FAULT_INJECTION", "0") == "1"
+
+
 # ─── Paths ───────────────────────────────────────────────────────────────────
 
 LOG_DIR = ROOT / "logs"
 AUDIT_LOG = LOG_DIR / "audit.jsonl"
+REQUEST_LOG = LOG_DIR / "requests.jsonl"   # one record per HTTP request (capstone)
 RESULTS_DIR = ROOT / "results"
