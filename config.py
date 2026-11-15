@@ -128,11 +128,15 @@ RATE_LIMIT_STORAGE = "memory://"
 
 
 # ─── Internal-failure hardening (CAPSTONE) ──────────────────────────────────
-# How long one detector call may take once the model is loaded. A warm call
-# takes about a second on a laptop CPU, so 10s is a generous ceiling: anything
-# past it is a hang, not a slow request, and the caller gets a 503 instead of
-# waiting forever. The first call (model load) is done at startup instead.
-DETECTOR_TIMEOUT_S = float(os.getenv("AI201_DETECTOR_TIMEOUT", "10"))
+# How long one detector call may take once the model is loaded. Anything past
+# it is a hang, not a slow request, and the caller gets a 503 instead of
+# waiting. The first call (model load) is done at startup instead.
+#
+# Capstone improvement: was 10s. Measured warm detector time is 195-336 ms for
+# ordinary pieces and at most 533 ms for the longest text /submit accepts
+# (19,900 chars, truncated to 400 tokens). 10s made a hung request wait ~30x
+# longer than any real one; 3s still leaves >5x the worst measured case.
+DETECTOR_TIMEOUT_S = float(os.getenv("AI201_DETECTOR_TIMEOUT", "3"))
 
 # Load the model before serving, so the first real request isn't the 10-20s
 # cold load and isn't mistaken for a hang. AI201_WARM_UP=0 skips it.

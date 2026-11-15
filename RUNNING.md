@@ -61,7 +61,7 @@ python reqlog.py                   # counts by route, status and error
 
 | Setting (env var) | Default | What it does |
 |---|---|---|
-| `AI201_DETECTOR_TIMEOUT` | `10` | seconds a warm detector call may take before `/submit` answers `503 detector_timeout` |
+| `AI201_DETECTOR_TIMEOUT` | `3` (was `10` before the capstone improvement) | seconds a warm detector call may take before `/submit` answers `503 detector_timeout` |
 | `AI201_WARM_UP` | `1` | load the model at startup |
 | `AI201_FAULT_INJECTION` | `0` | honour the `X-Fault` header |
 | `AI201_RATE_LIMITS` | `1` | unit 8 rate limits (5/minute, 40/day per `creator_id`) |
