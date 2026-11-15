@@ -2,6 +2,70 @@
 
 Everything about how the starter works.
 
+---
+
+## Capstone run path — Path B, local with logs
+
+Not hosted: the detector loads gpt2 inside the process (526 MB of model files),
+which doesn't fit a 512 MB free instance. It runs locally, started by one
+command, and every request leaves a record in `logs/requests.jsonl`.
+
+**Environment**
+
+- Python 3.11, 3.12 or 3.13 (tested on 3.11.9 from a clean clone, and 3.12.13)
+- Dependencies from `requirements.txt` (pinned ranges). The versions this was run with:
+  `flask==3.1.3`, `flask-limiter==3.12`, `torch==2.15.0`, `transformers==4.57.6`,
+  `requests==2.34.2`, `certifi==2026.10.23`
+- Model: `gpt2` from Hugging Face, 526 MB, downloaded to `~/.cache/huggingface`
+  the first time (`python detector.py` does it ahead of time). No API key.
+
+**From a clean checkout**
+
+```bash
+git clone https://github.com/basetsowab/provenance-guard.git
+cd provenance-guard
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python detector.py                 # one-time 526 MB model download
+python test.py                     # should end "9 passed"
+```
+
+**The start command**
+
+```bash
+python app.py
+```
+
+It loads the model before serving (`warming up: gpt2 loaded and ready.`), then
+listens on `http://127.0.0.1:5000`. `AI201_WARM_UP=0` skips the warm-up.
+
+**To test the bad paths**, start it with fault injection on instead:
+
+```bash
+AI201_FAULT_INJECTION=1 python app.py                 # bash / Git Bash
+$env:AI201_FAULT_INJECTION=1; python app.py           # PowerShell
+```
+
+Then a request can ask for a fault with the header `X-Fault:` and one of
+`detector_error`, `detector_slow`, `style_error`, `audit_unwritable` (see
+`guard.py`). Without `AI201_FAULT_INJECTION=1` the header is ignored.
+
+**A recorded session and the cost number**, with the service running:
+
+```bash
+python capstone_session.py         # 10 normal submissions + 5 bad-path ones
+python capstone_session.py --cost  # mean/median request time from the log
+python reqlog.py                   # counts by route, status and error
+```
+
+| Setting (env var) | Default | What it does |
+|---|---|---|
+| `AI201_DETECTOR_TIMEOUT` | `10` | seconds a warm detector call may take before `/submit` answers `503 detector_timeout` |
+| `AI201_WARM_UP` | `1` | load the model at startup |
+| `AI201_FAULT_INJECTION` | `0` | honour the `X-Fault` header |
+| `AI201_RATE_LIMITS` | `1` | unit 8 rate limits (5/minute, 40/day per `creator_id`) |
+
 This is a **web service**. It runs on your machine and you talk to it with
 `curl` from another terminal. If you've not built a backend before, that's
 assumed — the starter ships one that already answers.
