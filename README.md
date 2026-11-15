@@ -815,3 +815,86 @@ The last five are the failures: a detector that raises (`503 detector_failed`, 2
 - **Compute: 228 ms of wall-clock time per `/submit`** (median 216 ms, range 197–341 ms), of which 226 ms (99%) is inside the detector.
 - **How I measured it:** the ten successful, fault-free `/submit` records above, read back from `logs/requests.jsonl` by `capstone_session.py::cost_summary` — `duration_ms` is timed by the service itself (`time.perf_counter()` from `before_request` to `after_request`), not by the client. Laptop CPU, model already warm. On top of that there's a one-off model load at startup (8–20 s in these runs) and 526 MB of model on disk.
 - **A hundred people a day**, each submitting one piece: 100 × 0.228 s = **22.8 seconds of CPU a day**, $0 in API fees. At five pieces each, 500 × 0.228 s = 114 s ≈ 2 minutes. The real cost is keeping one process with the model in memory running all day, not the per-request compute.
+
+**Run Log and Verdicts**
+
+Criteria are in `criteria.md` under "Capstone criteria" (committed in `5fcc57a`, "add capstone criteria", before any trial). Each was run three times by `capstone_eval.py::main` against the running service (`AI201_FAULT_INJECTION=1 python app.py`, rate limiting on), changing nothing between trials. Exactly what counts as a pass for each is in the docstring at the top of `capstone_eval.py`. Full raw output: `results/capstone_2026-11-15_1851_before.md`.
+
+*Before (detector time limit 10 s)*
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| C1. Slow model → 503 within 11 s | 3/3 | PASS (503 in 10.01 s) | PASS (503 in 10.01 s) | PASS (503 in 10.02 s) | MET (3/3) |
+| C2. Model crash → clear error, server stays up | 3/3 | PASS (503 detector_failed, /ping 200) | PASS | PASS | MET (3/3) |
+| C3. Processing failure → recorded in the audit log | 3/3 | PASS (3/3 failures logged) | PASS (3/3) | PASS (3/3) | MET (3/3) |
+| C4. Invalid endpoint → 404 | 3/3 | PASS (GET 404, POST 404) | PASS | PASS | MET (3/3) |
+| C5. Empty/malformed JSON → 4xx with a reason | 3/3 | PASS (5/5 4xx, 0 reached detector) | PASS (5/5, 0) | PASS (5/5, 0) | MET (3/3) |
+
+Real output from Run 1 of each, produced by `capstone_eval.py::c1` to `c5` against `app.py::submit` and `app.py::unexpected_error`:
+
+```
+C1  503 10.01s {"error": "detector_timeout", "message": "The checker took longer than 10 seconds, so this piece wasn't checked and nothing was recorded against it. Try again in a minute.", "request_id": "cbed04b7041f"}
+
+C2  503 {"error": "detector_failed", "message": "The checker hit an error on this piece, so it wasn't checked and nothing was recorded against it. Try again; if it keeps happening, the text itself may be the trigger.", "request_id": "e8b778ceff9c"}
+    /ping -> 200 {"ok": true, "service": "provenance-guard", "you_sent": "still up?"}
+
+C3  detector_error: {"timestamp": "2026-11-15T23:48:50+00:00", "creator_id": "c3_1_e09018_0", "event": "rejected", "status": "rejected", "reason": "detector_failed", "http_status": 503, "detail": "RuntimeError: injected fault: detector_error", "text_length": 390}
+    style_error: {"timestamp": "2026-11-15T23:48:51+00:00", "creator_id": "c3_1_e09018_1", "event": "rejected", "status": "rejected", "reason": "internal_error", "http_status": 500, "route": "/submit", "detail": "ZeroDivisionError: injected fault: style_error"}
+    detector_slow: {"timestamp": "2026-11-15T23:49:01+00:00", "creator_id": "c3_1_e09018_2", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
+
+C4  GET 404 {"error": "not_found", "message": "The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again."}
+    POST 404 (same body)
+
+C5  empty body    400 error=invalid_json request_id=ef73e293a171 detector_ms=None
+    broken JSON   400 error=invalid_json request_id=8c74fddb4303 detector_ms=None
+    JSON array    400 error=invalid_json request_id=90b78109cbc0 detector_ms=None
+    JSON string   400 error=invalid_json request_id=95dc33ecd048 detector_ms=None
+    empty object  400 error=missing_creator_id request_id=bbd24af3876a detector_ms=None
+```
+
+*Verdicts.* All five MET, 3/3 each: every trial passed, so the count equals the target on every row. There are no misses to diagnose. The honest reading is that **the targets were set low**:
+
+- C1 to C3 are tested with *injected* faults (`guard.py`), and an injected fault behaves the same way every time, so once the handler worked, 3/3 was close to certain. The injection also happens in `guard.run_with_timeout`, *around* `detector.model_signal`, not inside torch. So C2 proves the handler catches an exception, not that a real model crash looks like this one.
+- C1's margin was 1 s: the answer came at 10.01 s against an 11 s target, because the target sat just above the limit I'd chosen. It measured "the timeout fires at the timeout", not whether 10 s is a sensible wait.
+- C4 was already true before the capstone: Flask returns 404 for an unknown route by default. The extension only changed the body from an HTML page to JSON. C5's malformed-JSON cases were unit 8 behaviour too.
+
+The criterion I'd tighten first is **C1, to "503 within 4 s, 3/3, and 0 of 20 normal requests time out"**, so it measures how long a caller waits *and* catches a limit set so tight it rejects real work.
+
+**The Improvement**
+
+*What I changed:* the detector time limit, `config.DETECTOR_TIMEOUT_S`, from 10 s to 3 s (commit `bd735fe`). Nothing else.
+
+*Why:* the verdicts showed C1 only measured "the timeout fires at the timeout", and the request log showed how far the limit was from real work. Warm detector calls took 195–336 ms (`detector_ms` on the 10 session requests), and five submissions of the longest text `/submit` accepts (19,900 characters, truncated to 400 tokens) took 469–533 ms. A 10 s limit made a caller with a hung request wait about 19 times longer than the slowest real request. 3 s still leaves more than 5 times the measured worst case.
+
+*After (detector time limit 3 s)*: `results/capstone_2026-11-15_1855_after.md`
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| C1. Slow model → 503 within 11 s | 3/3 | PASS (503 in 3.02 s) | PASS (503 in 3.01 s) | PASS (503 in 3.01 s) | MET (3/3) |
+| C2. Model crash → clear error, server stays up | 3/3 | PASS (503 detector_failed, /ping 200) | PASS | PASS | MET (3/3) |
+| C3. Processing failure → recorded in the audit log | 3/3 | PASS (3/3 failures logged) | PASS (3/3) | PASS (3/3) | MET (3/3) |
+| C4. Invalid endpoint → 404 | 3/3 | PASS (GET 404, POST 404) | PASS | PASS | MET (3/3) |
+| C5. Empty/malformed JSON → 4xx with a reason | 3/3 | PASS (5/5 4xx, 0 reached detector) | PASS (5/5, 0) | PASS (5/5, 0) | MET (3/3) |
+
+*Did it help?* Yes, on what it was aimed at. A hung detector now answers in 3.01–3.02 s instead of 10.01–10.02 s, about 7 s less waiting per hang, and every verdict stayed MET. The cost I checked for is false timeouts, where a real request gets cut off. After the change, the 10 normal session submissions (180–294 ms) and 5 more maximum-length submissions (488–536 ms in the detector) all returned 200. Across the whole request log there are 0 timeouts without an injected fault. The trade I can't rule out from this laptop: on a machine more than about 5 times slower, or with a bigger detector model, real requests would start getting `503 detector_timeout`. That's why the limit stays an environment variable (`AI201_DETECTOR_TIMEOUT`).
+
+**What's Still Broken**
+
+No criterion is still missed, so this is about where the targets and the system are weaker than the table makes them look:
+
+- **The targets were low.** I'd tighten C1 to "503 within 4 s, and 0 of 20 normal requests time out". I'd change C2 to use a real torch failure rather than an exception injected around the call.
+- **A timed-out detector call is abandoned, not stopped.** `guard.run_with_timeout` answers the caller, but Python can't kill the thread, so a real hang keeps a thread (and CPU, if torch is stuck computing) for as long as it lasts. Ten hangs in a row would leave ten. None of the criteria measure this. I stopped there because fixing it means moving the detector into a separate process.
+- **An unwritable audit log is only half-recorded.** The `audit_unwritable` failure can't, by definition, be written to the audit log. It is recorded in `logs/requests.jsonl` (`audit_error` filled in; see the Instrumentation excerpt), but if both files were unwritable the only trace would be a line on stderr. C3 covers the three processing failures where the audit log works, not this one.
+- **Rate-limit counts are still in memory** (out of scope), so a restart resets them.
+
+*What I'd do first with another unit:* run the detector in a worker process with a hard kill on timeout. It's the one failure the current hardening only *reports* rather than contains, and on a real server a few hung calls would quietly eat the CPU every other request needs.
+
+**How I Used AI**
+
+**Moment 1: Understanding the backend**
+
+I asked AI to explain how the API should receive text, validate it, and return a classification. It explained how the different parts of the backend work together and suggested ways to organize the code. I reviewed the suggestions and used them to better understand the project structure.
+
+**Moment 2: Debugging and error handling**
+
+I asked AI to help identify possible bugs and failure scenarios. It suggested testing invalid inputs, missing fields, API errors, and incorrect classifications. I used those suggestions to improve my testing approach and focus more on handling errors without crashing the application.
