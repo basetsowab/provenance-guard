@@ -1,104 +1,59 @@
 # Acceptance criteria — Provenance Guard
 
-Five criteria that say what "working" means for this service, written in unit 7
-**before** you built it.
-
-**All five are yours.** None are given.
-
-An acceptance criterion names a number or something plainly observable. *"The
-detector is accurate"* is an opinion — and perfect AI detection isn't possible
-anyway, so it's an opinion about something nobody can deliver. *"Of 10 pieces I
-wrote myself, at most 1 is labelled high-confidence AI"* is a criterion.
-
-Under each, write a sentence or two on **why that target**. *"I allow at most 1
-false positive in 10 because on a writing site a wrong accusation costs more
-than a missed detection"* is a real answer.
-
-> Missing your own targets next unit costs you nothing. Setting a target so
-> easy you can't miss it does.
+> **When these were written:** 2026-11-14. That is after the unit 8 attack run
+> (2026-11-07) and the threshold change it led to, and before any run of
+> `run_eval.py`. The attack results were known when I wrote these; the eval
+> results were not.
 
 ---
 
-## Pick numbers you can defend
+## 1. False positives
 
-**Cover at least three of these five areas.** They're prompts, not a form.
+**Of my 10 original writing samples, at most 2 should get labeled as AI in every trial.**
 
-| Area | A question it could answer |
-|---|---|
-| False positives | How often may a human's writing get called AI? |
-| Score spread | How far apart should clearly-AI and clearly-human text score? |
-| Label coverage | Is every one of your three labels actually reachable? |
-| The appeal path | Does an appeal always change status and always get recorded? |
-| Bad input | What happens when `text` is missing, empty, or enormous? |
+**Why this target:** One of the biggest concerns with AI detection systems is that they can incorrectly identify human-written content as AI-generated. This can become a serious issue in academic environments, where students might be accused of using AI even when they completed their assignments independently.
 
-Two things worth knowing before you pick numbers:
+For my project, I want to make sure the system is reasonably accurate without being overly aggressive. I chose a maximum of 2 false positives out of 10 samples as an initial testing threshold because I want the detector to recognize most human-written content correctly. However, this is only a starting point, and I would want to reduce that number further before using the application in a real environment.
 
-- **The expensive mistake is one-sided.** Missing some AI text costs the site a
-  little. Accusing a real writer costs that person a lot. A criterion that
-  treats both errors as equally bad is describing a system nobody would ship.
-- **Unit 8 tests across three trials, and the target has to hold across all
-  three.** Your first signal runs a model, so identical input can score
-  differently twice. A target of "at most 1 in 10" against trials of 2, 1, 2 is
-  a **miss**.
-
----
-## 1.
-
-<!-- Your criterion. It must name a number. -->
-
-
-
-**Why this target:**
-
-
+I would test the system using different types of my own writing, including essays, discussion posts, homework assignments, and informal paragraphs. This would help me determine whether the detector performs differently depending on writing style, vocabulary, or sentence structure.
 
 ---
 
-## 2.
+## 2. Bad input handling
 
-<!-- Your criterion. -->
+**Of 10 intentionally invalid requests, all 10 should return a 4xx error, and none should crash the service.**
 
+**Why this target:** An application should be able to handle unexpected input without failing. Users might accidentally submit empty text, invalid data, or requests that do not follow the expected structure. I want the backend to recognize invalid requests and return appropriate HTTP error codes instead of crashing or producing confusing results.
 
-
-**Why this target:**
-
-
+I would test empty submissions, unusually long submissions, incorrect data types, and missing fields. Reliable error handling improves both security and the overall user experience.
 
 ---
 
-## 3.
+## 3. Appeals process
 
-<!-- Your criterion. -->
+**Of 5 valid appeals, all 5 should move the associated item to `under_review` and appear in the appeal log.**
 
+**Why this target:** Since AI detection is not completely reliable, users should have an opportunity to challenge classifications they believe are incorrect. When an appeal is submitted successfully, the system should update the item's status to `under_review` and create a corresponding entry in the log, so an administrator can track appeals and investigate possible classification mistakes.
 
-
-**Why this target:**
-
-
+I chose 5 appeals as an initial functional test because it is a manageable number for checking whether the status change and logging work correctly.
 
 ---
 
-## 4.
+## 4. Classification labels
 
-<!-- Your criterion. -->
+**All three classification labels should be reachable: `human`, `uncertain`, and `AI`.**
 
+**Why this target:** A detection system should not always be forced to classify content as either human-written or AI-generated. Some writing has characteristics of both, for example an essay improved with a grammar checker, or an AI paragraph edited heavily by a person. Because of that, the `uncertain` label matters, but so do the other two.
 
-
-**Why this target:**
-
-
+I would submit original human-written paragraphs, clearly AI-generated examples, and ambiguous examples, and check that all three labels come back. If the system only ever produces one or two labels, its thresholds or classification logic have a problem.
 
 ---
 
-## 5.
+## 5. Reliability
 
-<!-- Your criterion. -->
+**At least 95% of valid requests should receive a successful response during testing.**
 
-
-
-**Why this target:**
-
-
+**Why this target:** Even if the detection works well, the application would not be useful if the API frequently crashes, times out, or fails to return results. I would test using multiple valid requests with different text lengths and writing styles. 95% is my initial target, although I would aim for a higher percentage before deploying the application for real users.
 
 ---
 
