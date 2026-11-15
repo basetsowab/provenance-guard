@@ -22,8 +22,14 @@ A scenario carries **either** of these:
               because you cannot express "the field is missing" as a string.
 """
 
-# Criterion numbers are left as None until criteria.md is written; set each
-# one to the criterion it tests.
+# Criteria (criteria.md):
+#   1 false positives  -> "my own writing"
+#   2 bad input        -> "bad input" (10 bodies)
+#   3 appeals          -> "appeal path" (5 appeals)
+#   4 labels reachable -> every 200 response across "my own writing",
+#                         "clearly AI" and "clearly human"
+#   5 reliability      -> share of valid text submissions (all "texts" and
+#                         "appeals" submits) that come back 200
 
 # Machine-written on purpose: generic, polished, the register AI detectors are
 # built for. Written by Claude for this test, not taken from the attack set.
@@ -49,24 +55,24 @@ SCENARIOS = [
     #
     # {
     #     "name": "my own writing",
-    #     "criterion": None,
+    #     "criterion": 1,
     #     "texts": [
     #         "...",
     #     ],
     # },
     {
         "name": "clearly AI",
-        "criterion": None,
+        "criterion": 4,
         "texts": CLEARLY_AI,
     },
     {
         "name": "clearly human",
-        "criterion": None,
+        "criterion": 4,
         "texts": CLEARLY_HUMAN,
     },
     {
         "name": "bad input",
-        "criterion": None,
+        "criterion": 2,
         # Raw bodies. Each has its own creator_id so the three trials don't
         # trip the per-address limit and hide what the route does.
         "bodies": [
@@ -76,11 +82,15 @@ SCENARIOS = [
             {"text": None, "creator_id": "eval_bad_null"},
             {"text": 12345, "creator_id": "eval_bad_number"},
             {"text": "word " * 50000, "creator_id": "eval_bad_huge"},
+            {"text": ["a", "list"], "creator_id": "eval_bad_list"},
+            {"text": "a", "creator_id": "eval_bad_onechar"},
+            {"text": "A real sentence of ordinary length.", "creator_id": {"id": 1}},
+            {"text": "A real sentence of ordinary length."},  # no creator_id
         ],
     },
     {
         "name": "appeal path",
-        "criterion": None,
+        "criterion": 3,
         # Each text is submitted, then appealed against the content_id that
         # came back, then GET /log is read to confirm the status moved.
         # Handled by run_eval.py::run_appeals.
