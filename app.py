@@ -24,6 +24,7 @@ Routes:
     GET  /health      is the service up, and is the model loaded
 """
 
+import time
 import uuid
 
 from flask import Flask, g, jsonify, request
@@ -31,11 +32,49 @@ from flask import Flask, g, jsonify, request
 import audit
 import config
 import guard
+import reqlog
 
 app = Flask(__name__)
 
 # Refuse request bodies far bigger than any allowed text before parsing them.
 app.config["MAX_CONTENT_LENGTH"] = 1_000_000  # bytes
+
+
+# ── Capstone: one structured record per request ──────────────────────────────
+
+@app.before_request
+def _start_request():
+    g.request_id = uuid.uuid4().hex[:12]
+    g.started = time.perf_counter()
+
+
+@app.after_request
+def _record_request(response):
+    """Write the request-log record. Runs for errors too, crashes included."""
+    payload = request.get_json(silent=True) if request.is_json else None
+    payload = payload if isinstance(payload, dict) else {}
+    text = payload.get("text")
+    started = g.get("started")
+    reqlog.write({
+        "request_id": g.get("request_id"),
+        "method": request.method,
+        "route": request.path,
+        "status": response.status_code,
+        "duration_ms": round((time.perf_counter() - started) * 1000) if started else None,
+        "detector_ms": g.get("detector_ms"),
+        "input": {
+            "creator_id": payload.get("creator_id") if isinstance(payload.get("creator_id"), str) else None,
+            "text_length": len(text) if isinstance(text, str) else None,
+            "text_preview": text[:40] if isinstance(text, str) else None,
+            "fault": guard.active_fault(),
+        },
+        "output": g.get("outcome"),
+        "audit_error": g.get("audit_error"),
+        "exception": g.get("exception"),
+    })
+    if g.get("request_id"):
+        response.headers["X-Request-ID"] = g.request_id
+    return response
 
 
 @app.errorhandler(413)
@@ -343,7 +382,8 @@ def _reject(creator_id, reason, http_status, message, **extra):
     except OSError as exc:
         # The refusal still goes out; the request log keeps the record.
         g.audit_error = f"{type(exc).__name__}: {exc}"
-    return jsonify({"error": reason, "message": message}), http_status
+    return jsonify({"error": reason, "message": message,
+                    "request_id": g.get("request_id")}), http_status
 
 
 # ── Capstone: nothing leaves as Flask's HTML error page ──────────────────────
