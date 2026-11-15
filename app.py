@@ -279,6 +279,7 @@ def submit():
                        detail=f"{type(exc).__name__}: {exc}", text_length=len(text))
 
     # ── Signal two: the shape of the text ──
+    guard.fault("style_error")   # capstone test hook; a no-op unless injected
     style_score = stylometry.style_signal(text)
 
     # ── One number, then words a person can read ──
@@ -286,17 +287,37 @@ def submit():
     guess, label = scoring.score_to_label(combined)
 
     content_id = str(uuid.uuid4())
-    audit.log_decision(
-        content_id=content_id,
-        creator_id=creator_id,
-        guess=guess,
-        model_score=model_score,
-        style_score=style_score,
-        combined_score=combined,
-        label=label,
-        status="decided",
-        text_length=len(text),
-    )
+    # Capstone: a decision that never reached the audit log can't be appealed
+    # (/appeal looks the id up there), so handing out its content_id would be
+    # a promise the service can't keep. Refuse instead, and say so.
+    try:
+        guard.fault("audit_unwritable")
+        audit.log_decision(
+            content_id=content_id,
+            creator_id=creator_id,
+            guess=guess,
+            model_score=model_score,
+            style_score=style_score,
+            combined_score=combined,
+            label=label,
+            status="decided",
+            text_length=len(text),
+        )
+    except OSError as exc:
+        g.audit_error = f"{type(exc).__name__}: {exc}"
+        g.outcome = {"error": "audit_unavailable"}
+        return jsonify({
+            "error": "audit_unavailable",
+            "message": ("Your text was checked, but the result couldn't be saved, "
+                        "so no result is being given — an unsaved result couldn't "
+                        "be appealed. Nothing was recorded against you. Try again "
+                        "in a minute."),
+            "request_id": g.get("request_id"),
+        }), 503
+
+    g.outcome = {"content_id": content_id, "guess": guess,
+                 "combined_score": combined, "model_score": model_score,
+                 "style_score": style_score}
 
     # `confidence` is the combined score: 0.0 = confidently human,
     # 1.0 = confidently AI, middle values = unsure.
@@ -314,9 +335,56 @@ def submit():
 
 def _reject(creator_id, reason, http_status, message, **extra):
     """Log a refused request, then tell the caller why it was refused."""
-    audit.log_rejection(creator_id=creator_id, reason=reason,
-                        http_status=http_status, **extra)
+    g.outcome = {"error": reason}
+    try:
+        guard.fault("audit_unwritable")
+        audit.log_rejection(creator_id=creator_id, reason=reason,
+                            http_status=http_status, **extra)
+    except OSError as exc:
+        # The refusal still goes out; the request log keeps the record.
+        g.audit_error = f"{type(exc).__name__}: {exc}"
     return jsonify({"error": reason, "message": message}), http_status
+
+
+# ── Capstone: nothing leaves as Flask's HTML error page ──────────────────────
+
+@app.errorhandler(Exception)
+def unexpected_error(exc):
+    """
+    Anything a route didn't catch.
+
+    Without this an exception anywhere in /submit — the style signal, the
+    scoring — answers with Flask's HTML 500 page and leaves no audit entry.
+    Now it answers JSON with a request_id the caller can quote, and it's
+    recorded in both logs. HTTP errors (404, 405, ...) keep their own status
+    but answer in JSON too.
+    """
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(exc, HTTPException):
+        g.outcome = {"error": exc.name.lower().replace(" ", "_")}
+        return jsonify({"error": g.outcome["error"],
+                        "message": exc.description}), exc.code
+
+    detail = f"{type(exc).__name__}: {exc}"
+    g.outcome = {"error": "internal_error"}
+    g.exception = detail
+    payload = request.get_json(silent=True)
+    creator = payload.get("creator_id") if isinstance(payload, dict) else None
+    try:
+        audit.log_rejection(creator_id=creator if isinstance(creator, str) else "unknown",
+                            reason="internal_error", http_status=500,
+                            route=request.path, detail=detail)
+    except OSError as log_exc:
+        g.audit_error = f"{type(log_exc).__name__}: {log_exc}"
+    app.logger.exception("unhandled error on %s", request.path)
+    return jsonify({
+        "error": "internal_error",
+        "message": ("Something went wrong inside the service, so this piece "
+                    "wasn't checked and nothing was recorded against you. Try "
+                    "again; if it keeps happening, quote the request_id."),
+        "request_id": g.get("request_id"),
+    }), 500
 
 
 @app.post("/appeal")
