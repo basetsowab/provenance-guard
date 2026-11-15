@@ -307,3 +307,34 @@
 {"timestamp": "2026-11-15T23:40:13+00:00", "creator_id": "cap_fault", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
 {"timestamp": "2026-11-15T23:40:14+00:00", "creator_id": "cap_fault", "event": "rejected", "status": "rejected", "reason": "internal_error", "http_status": 500, "route": "/submit", "detail": "ZeroDivisionError: injected fault: style_error"}
 {"timestamp": "2026-11-15T23:40:14+00:00", "creator_id": "cap_fault", "event": "rejected", "status": "rejected", "reason": "missing_text", "http_status": 400}
+{"timestamp": "2026-11-15T23:48:36+00:00", "creator_id": "c1_1", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
+{"timestamp": "2026-11-15T23:48:50+00:00", "creator_id": "c1_1", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
+{"timestamp": "2026-11-15T23:48:50+00:00", "creator_id": "c2_1", "event": "rejected", "status": "rejected", "reason": "detector_failed", "http_status": 503, "detail": "RuntimeError: injected fault: detector_error", "text_length": 390}
+{"timestamp": "2026-11-15T23:48:50+00:00", "creator_id": "c3_1_e09018_0", "event": "rejected", "status": "rejected", "reason": "detector_failed", "http_status": 503, "detail": "RuntimeError: injected fault: detector_error", "text_length": 390}
+{"timestamp": "2026-11-15T23:48:51+00:00", "creator_id": "c3_1_e09018_1", "event": "rejected", "status": "rejected", "reason": "internal_error", "http_status": 500, "route": "/submit", "detail": "ZeroDivisionError: injected fault: style_error"}
+{"timestamp": "2026-11-15T23:49:01+00:00", "creator_id": "c3_1_e09018_2", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
+{"timestamp": "2026-11-15T23:49:01+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:49:01+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:49:01+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:49:01+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:49:01+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "missing_creator_id", "http_status": 400}
+{"timestamp": "2026-11-15T23:50:16+00:00", "creator_id": "c1_2", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
+{"timestamp": "2026-11-15T23:50:16+00:00", "creator_id": "c2_2", "event": "rejected", "status": "rejected", "reason": "detector_failed", "http_status": 503, "detail": "RuntimeError: injected fault: detector_error", "text_length": 390}
+{"timestamp": "2026-11-15T23:50:16+00:00", "creator_id": "c3_2_d9a648_0", "event": "rejected", "status": "rejected", "reason": "detector_failed", "http_status": 503, "detail": "RuntimeError: injected fault: detector_error", "text_length": 390}
+{"timestamp": "2026-11-15T23:50:16+00:00", "creator_id": "c3_2_d9a648_1", "event": "rejected", "status": "rejected", "reason": "internal_error", "http_status": 500, "route": "/submit", "detail": "ZeroDivisionError: injected fault: style_error"}
+{"timestamp": "2026-11-15T23:50:26+00:00", "creator_id": "c3_2_d9a648_2", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
+{"timestamp": "2026-11-15T23:50:26+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:50:26+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:50:26+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:50:26+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:50:26+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "missing_creator_id", "http_status": 400}
+{"timestamp": "2026-11-15T23:51:41+00:00", "creator_id": "c1_3", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
+{"timestamp": "2026-11-15T23:51:41+00:00", "creator_id": "c2_3", "event": "rejected", "status": "rejected", "reason": "detector_failed", "http_status": 503, "detail": "RuntimeError: injected fault: detector_error", "text_length": 390}
+{"timestamp": "2026-11-15T23:51:41+00:00", "creator_id": "c3_3_11feed_0", "event": "rejected", "status": "rejected", "reason": "detector_failed", "http_status": 503, "detail": "RuntimeError: injected fault: detector_error", "text_length": 390}
+{"timestamp": "2026-11-15T23:51:41+00:00", "creator_id": "c3_3_11feed_1", "event": "rejected", "status": "rejected", "reason": "internal_error", "http_status": 500, "route": "/submit", "detail": "ZeroDivisionError: injected fault: style_error"}
+{"timestamp": "2026-11-15T23:51:51+00:00", "creator_id": "c3_3_11feed_2", "event": "rejected", "status": "rejected", "reason": "detector_timeout", "http_status": 503, "detail": "detector took longer than 10s and was abandoned", "text_length": 390}
+{"timestamp": "2026-11-15T23:51:51+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:51:51+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:51:51+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:51:51+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "invalid_json", "http_status": 400}
+{"timestamp": "2026-11-15T23:51:51+00:00", "creator_id": "unknown", "event": "rejected", "status": "rejected", "reason": "missing_creator_id", "http_status": 400}
