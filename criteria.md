@@ -87,3 +87,42 @@ I would submit original human-written paragraphs, clearly AI-generated examples,
      A number you missed stays where it is, gets diagnosed, and gets a fix
      attempted. That's where the points are.
      ───────────────────────────────────────────────────────────────────────── -->
+
+---
+
+# Capstone criteria — internal-failure hardening (shape B)
+
+> **When these were written:** 2026-11-15, after the extension was built and one
+> logged session was run (the cost measurement in the README), and before any
+> capstone trial run. Criteria 1–3 are about the extension; 4 and 5 are about
+> the bad path.
+
+## C1. Timeout handling
+
+**Simulate a slow model response → return 503 within 11 seconds, 3/3 tests.**
+
+**Why this target:** requests shouldn't hang.
+
+## C2. Model failure
+
+**Simulate the AI model crashing → return a clear error without crashing the server, 3/3 tests.**
+
+**Why this target:** failures should be handled safely.
+
+## C3. Error logging
+
+**Trigger a processing failure → record the failure in the audit log, 3/3 tests.**
+
+**Why this target:** errors need to be traceable.
+
+## C4. Invalid endpoint
+
+**Submit a request to an invalid endpoint → return 404, 3/3 tests.**
+
+**Why this target:** nonexistent routes should be rejected.
+
+## C5. Invalid input
+
+**Submit empty or malformed JSON → return a 4xx error with a clear reason, 3/3 tests.**
+
+**Why this target:** bad requests shouldn't reach the classifier.
