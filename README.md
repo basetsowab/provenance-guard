@@ -238,17 +238,41 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 
 ## How I Used AI
 
-**Moment 1**
+**Moment 1: Understanding the project structure**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* help understanding how to organize the backend: how
+  an API endpoint receives text, validates the request, processes the
+  submission and returns a classification.
+- *What came back:* an explanation of how the parts (submission,
+  classification, API responses, storing results) could communicate, which
+  let me break the project into smaller tasks.
+- *What I changed:* I still had to review the suggested code and understand
+  how the components worked together, rather than relying on it as is.
 
-**Moment 2**
+**Moment 2: Debugging and testing scenarios**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* help thinking through potential bugs and testing
+  scenarios.
+- *What came back:* examples of invalid requests, API errors and cases where
+  classification might be wrong: an empty paragraph, badly formatted JSON, an
+  appeal against a classification that doesn't exist.
+- *What I changed:* I used them to think more carefully about input
+  validation and error handling, and to understand why those errors happen.
+
+**Moment 3 (unit 8): Claude Code for the eval run**
+
+- *What I asked for:* to check what was still missing from the assignment,
+  then to do the whole assignment.
+- *What came back:* a list of gaps (blank `criteria.md`, placeholder
+  `scenarios.py`, empty run log and How I Used AI). It declined to write my
+  criteria or invent "my own writing", and gave me a fill-in-the-blank
+  template instead. I wrote my five criteria from that template. Claude then
+  formatted them into `criteria.md`, built the eval scenarios (AI texts it
+  wrote, pre-1900 public-domain human texts, 10 bad requests, 5 appeals),
+  added appeal testing to `run_eval.py`, ran both evals, and drafted the run
+  log, verdicts and diagnoses.
+- *What I changed:* *(to fill in: what I checked or rewrote in the drafted
+  diagnoses and verdicts.)*
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
@@ -403,46 +427,202 @@ Model, style and combined scores are copied from `logs/audit.jsonl`.
 **The single worst outcome** — the one I'd least want to explain to a writer
 whose work got caught by it:
 
+The worst outcome I can imagine for Provenance Guard would be incorrectly
+identifying someone's original writing as AI-generated and having that
+classification used against them. For example, a student could spend several
+hours writing an essay independently, only for the system to classify it as
+AI-generated. If a professor or institution trusted that result without
+further investigation, the student could face academic penalties despite
+doing nothing wrong.
+
+This is especially concerning because certain writing styles may be more
+likely to trigger incorrect classifications. I believe false accusations can
+be more harmful than failing to detect some AI-generated content, so I would
+not want Provenance Guard to be treated as definitive proof that someone used
+AI. The appeals process is important because it gives users a way to
+challenge incorrect results.
+
 
 
 ---
 
 ## Run Log and Verdicts
 
-<!-- Your five criteria across three trials. `run_eval.py --label before`. -->
+Targets are from `criteria.md`. Produced by `run_eval.py::main` (appeals by
+`run_eval.py::run_appeals`) against `app.py::submit` and `app.py::appeal`.
+Scenarios are in `scenarios.py`.
+
+- **Before** = the system as it was before my one improvement
+  (`AI_THRESHOLD = 0.70`), re-created by setting that one line back for the
+  run: `results/run_2026-11-14_2339_before.md`.
+- **After** = the current system (`AI_THRESHOLD = 0.80`):
+  `results/run_2026-11-14_2340_after.md`.
+
+The threshold change can only move labels, so the before run is a faithful
+replay: every score in both runs is identical, and identical across all
+three trials, as expected from two deterministic signals.
+
+### Before (AI_THRESHOLD 0.70)
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. My own writing labelled AI | ≤ 2 of 10, every trial | not run | not run | not run | **MISSED (not tested)** |
+| 2. Invalid requests get a 4xx, no crash | 10 of 10 | 10/10 | 10/10 | 10/10 | **MET** |
+| 3. Appeals reach `under_review` and are logged | 5 of 5 | 5/5 | 5/5 | 5/5 | **MET** |
+| 4. All three labels reachable | 3 of 3 | 2/3 (ai, unsure) | 2/3 | 2/3 | **MISSED** |
+| 5. Valid requests succeed | ≥ 95% | 13/13 (100%) | 13/13 | 13/13 | **MET** |
 
-**Real output from one trial**, pasted as text, naming the file and function
-that produced it:
+### After (AI_THRESHOLD 0.80)
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. My own writing labelled AI | ≤ 2 of 10, every trial | not run | not run | not run | **MISSED (not tested)** |
+| 2. Invalid requests get a 4xx, no crash | 10 of 10 | 10/10 | 10/10 | 10/10 | **MET** |
+| 3. Appeals reach `under_review` and are logged | 5 of 5 | 5/5 | 5/5 | 5/5 | **MET** |
+| 4. All three labels reachable | 3 of 3 | 2/3 (ai, unsure) | 2/3 | 2/3 | **MISSED** |
+| 5. Valid requests succeed | ≥ 95% | 13/13 (100%) | 13/13 | 13/13 | **MET** |
+
+**How each verdict was decided**
+
+1. **Not tested, so not met.** The criterion needs 10 pieces of my own
+   writing and I did not supply any, so `scenarios.py` has that scenario
+   commented out. I am not counting a test that never ran as a pass. The
+   nearest evidence is the attack set's human pieces: before the fix, 6 of 8
+   were labelled AI (FP02–FP07), which would have missed a ≤ 2 target.
+2. **Met, with one caveat.** All 10 came back 400, 413 or 422 in trials 1 and
+   2, and no request crashed the service in any trial. In trial 3 the last
+   request (no `creator_id`) came back **429**, not 400. Requests without a
+   usable `creator_id` count against my address, and two such requests per
+   trial (this one and the `creator_id`-is-an-object one) means the sixth
+   lands in trial 3 and is over the 5-a-minute limit. 429 is a 4xx and nothing
+   crashed, so the target as written holds. But that request never reached my
+   route, so trial 3 doesn't show the route handling a missing `creator_id`.
+   Trials 1 and 2 do (400).
+3. **Met.** All 15 appeals across three trials: submit 200, appeal 200, the
+   appeal response says `under_review`, `GET /log` holds an `"event": "appeal"`
+   entry for that `content_id`, and its latest status is `under_review`.
+4. **Missed.** `ai` and `unsure` came back. `human` never did, in any trial,
+   for any input: the AI texts, five pieces of pre-1900 human writing, or the
+   appeal texts. A generous reading would say the label is "reachable"
+   because the attack run produced it twice (EV05 at 0.304, PI02 at 0.264).
+   But both of those were **AI text**. My criterion says the labels should
+   come up "under the appropriate conditions", and the only text that ever
+   reached `human` was AI text. That is a miss.
+5. **Met.** "Valid requests" = every well-formed submission in the run: 3 AI
+   texts, 5 human texts and 5 appeal submissions, 13 per trial. All 13 came
+   back 200 in every trial, so 39/39.
+
+**Real output, one trial each** (`results/run_2026-11-14_2340_after.md`,
+trial 1, produced by `run_eval.py::main` / `run_eval.py::run_appeals`):
+
+Criterion 2, a missing `text` field and a one-character text:
 
 ```json
-
+{"status": 400, "guess": null, "confidence": null, "model_score": null, "style_score": null, "label": null, "sent": "{\"creator_id\": \"eval_bad_missing\"}"}
+{"status": 422, "guess": null, "confidence": null, "model_score": null, "style_score": null, "label": null, "sent": "a"}
 ```
+
+Criterion 3, one appeal end to end:
+
+```json
+{
+  "sent": "In today's fast-paced digital landscape, effective communication has b",
+  "submit_status": 200,
+  "content_id": "6ca6c979-2dd0-4630-ad21-91957c192aef",
+  "guess": "unsure",
+  "appeal_status": 200,
+  "appeal_response_status": "under_review",
+  "log_entries": 2,
+  "appeal_logged": true,
+  "log_status": "under_review"
+}
+```
+
+Criteria 4 and 5: the only AI label after the fix, and the lowest-model-score
+human text (Whitman), which still landed in `unsure`:
+
+```json
+{"status": 200, "guess": "ai", "confidence": 0.8198, "model_score": 0.9469, "style_score": 0.6292, "label": "Our automated check thinks this was probably written with AI. Checks like this can be wrong, especially for plain or simple writing. If you wrote it yourself, you can ask for a review and a person will look at it.", "sent": "Climate change is one of the most pressing challenges facing humanity "}
+{"status": 200, "guess": "unsure", "confidence": 0.4373, "model_score": 0.1704, "style_score": 0.6809, "label": "We couldn't tell whether this was written by a person or with AI help. That happens often and it isn't an accusation. Nothing about how this piece is shown has changed. If you'd like a person to take a look, you can ask for a review.", "sent": "I celebrate myself, and sing myself, And what I assume you shall assum"}
+```
+
+Every score, both runs (identical in all three trials):
+
+| Input | Model | Style | Combined | Before | After |
+|---|---|---|---|---|---|
+| AI 1 (communication) | 0.845 | 0.621 | 0.755 | ai | unsure |
+| AI 2 (climate) | 0.947 | 0.629 | 0.820 | ai | ai |
+| AI 3 (exercise) | 0.946 | 0.573 | 0.797 | ai | unsure |
+| Twain, *Huck Finn* ch. 8 | 0.637 | 0.368 | 0.530 | unsure | unsure |
+| Twain, *Huck Finn* ch. 1 | 0.461 | 0.374 | 0.426 | unsure | unsure |
+| Thoreau, *Walden* | 0.623 | 0.653 | 0.635 | unsure | unsure |
+| Douglass, *Narrative* | 0.520 | 0.471 | 0.501 | unsure | unsure |
+| Whitman, *Song of Myself* | 0.170 | 0.681 | 0.437 | unsure | unsure |
 
 **Diagnoses**
 
-<!-- For each miss AND each broken attack: the stage and the mechanism.
+*Criterion 1 (not tested).* There is no pipeline failure to diagnose. The
+gap is in the test: the scenario that needs my own writing was never filled.
 
-     Your service has five stages: the route, signal one, signal two, the
-     combining rule, and the label mapping.
+*Criterion 4: the `human` label is unreachable for real human writing.*
+Stage: **the label mapping**, with signals one and two keeping scores up and
+**the combining rule** making it worse. To get `human`, the combined score has
+to be under 0.35, which with weights 0.6/0.4 means both signals have to be low
+at once. That never happens for real human text:
 
-     Not a diagnosis:  "The evasion attacks got through."
-     A diagnosis:      "Four evasion inputs got through. All four had typos
-                        added to AI-generated text. My second signal measures
-                        word variety, and typos raise word variety — so it read
-                        them as more human. My combining rule weights that
-                        signal at 0.6, so it dragged the whole score down."
+- **Signal two can't go low on short text.** Every eval text is 55–76 words.
+  `stylometry.style_signal` pulls anything under 120 words toward 0.5 in
+  proportion to its length, so a 70-word piece gets only about 60% of the
+  pull away from the middle. The lowest style score any human text got was
+  0.368.
+- **Signal one rates famous human prose as predictable.** Thoreau, Douglass
+  and Twain score 0.46–0.64. These passages are very likely in the
+  detector model's training data, so their perplexity is low. Probing before
+  the run, I found the opening of *A Tale of Two Cities* scored 0.949 model /
+  0.818 combined, which is a confident AI label on Dickens.
+- **The disagreement rule pulls the one low score back up.** Whitman got the
+  lowest model score (0.170), but style read the long comma-joined verse
+  line as AI-like (0.681). The 0.51 gap is over `DISAGREEMENT_GAP` (0.4), so
+  `scoring.combine_signals` shrank the raw 0.374 halfway toward 0.5,
+  giving 0.437.
 
-     Look for a pattern. Five failures on one signal is one problem, not five. -->
+Mechanism in one line: `HUMAN_THRESHOLD = 0.35` sits below where human writing
+actually lands (0.43–0.64 here, 0.39–0.79 in the attack set), so only text
+with unusual tokens that break signal one, which in this project means AI
+text, ever gets under it.
 
+*Broken attacks (Attack Run — Before).* The six false positives are diagnosed
+under The Improvement. The other twelve:
 
+| ID | Model | Style | Combined | Stage | Mechanism |
+|---|---|---|---|---|---|
+| EV01 typos | 0.164 | 0.677 | 0.435 | signal one, then combining rule | The attack aimed at signal two, but typos are rare tokens, so perplexity jumped and signal one read the text as human. The 0.51 gap triggered the disagreement rule, which pulled it to 0.435. |
+| EV02 broken-up sentences | 0.594 | 0.154 | 0.459 | signal two, then combining rule | Chopping sentences raised sentence-length spread, which is half of signal two's weight. Style dropped to 0.15, and the 0.44 gap triggered the shrink toward 0.5. |
+| EV03 pasted quotation | 0.666 | 0.299 | 0.519 | signal two | A quotation adds sentences of a different length and extra punctuation, so spread and punctuation density both read human. |
+| EV04 unusual words | 0.611 | 0.679 | 0.639 | signal one | Rare vocabulary raises perplexity. Signal one fell to 0.61, so the score stayed below even the old 0.70 line with style still AI-like. |
+| EV05 heavy human edit | 0.321 | 0.277 | 0.304 | both signals | After a real editing pass, both signals measure human-like text, because by both measures it is. No single stage is wrong. Neither signal can see where the text came from, only what it looks like now. |
+| EV06 one long + one short sentence | 0.573 | 0.308 | 0.467 | signal two | Two extreme sentence lengths are enough to send the coefficient of variation into the human range. |
+| EV07 punctuation padding | 0.586 | 0.298 | 0.471 | signal two | Punctuation density maps 4+ marks per 100 words to fully human. Padding hits that directly. |
+| EV08 below token window | 0.245 | 0.517 | 0.354 | signal one | Very short text gives the detector little context, so perplexity is high and unreliable. Style is shrunk to near 0.5 by the short-text rule. |
+| EV09 human opening bolted on | 0.704 | 0.480 | 0.614 | both signals, whole-document scoring | Both signals average over the whole text, so a human paragraph dilutes the AI part. Nothing scores sections separately. |
+| PI01 "ignore the check" | 0.463 | 0.406 | 0.440 | signal one | Neither signal follows instructions. The injected sentence is odd, out-of-place text, which raises perplexity and lowers signal one. |
+| PI02 fake system message | 0.204 | 0.354 | 0.264 | signal one | Same mechanism, stronger: the "SYSTEM:" line dropped signal one from 0.754 (same text, no prefix) to 0.204, low enough for a `human` label. |
+| PI03 instruction in the writer's voice | 0.594 | 0.447 | 0.535 | signal one | Same mechanism, milder: the prefix reads more naturally, so perplexity rose less. |
+
+**The pattern.** These are three problems, not twelve:
+
+1. **Signal two measures surface shape, which takes seconds to change**
+   (EV02, EV03, EV06, EV07). Each attack moved one of its three measures on
+   purpose.
+2. **Signal one reads anything unusual as human** (EV01, EV04, EV08,
+   PI01–PI03). Typos, rare words, short length and injected instructions all
+   raise perplexity. The injection attacks didn't work because the model
+   obeyed them. They worked because they are strange text.
+3. **The AI band is narrow.** Clean AI text scores only 0.75–0.87, so any
+   attack that moves either signal by about 0.15 drops it out of the AI band.
+   The disagreement rule (EV01, EV02) helps those attacks by pulling split
+   scores toward 0.5. The 0.80 threshold makes this worse: two of my three
+   clean AI texts no longer reach it.
 
 ---
 
@@ -502,22 +682,39 @@ EV10 (0.871) gets it. My unit 7 "clearly AI" calibration paragraph scored
 accused human writers into "unsure" without separating them from AI text:
 human pieces still score 0.72–0.79, higher than most AI text in the set.
 
+My own eval run shows the same cost. With the same scores, my three clean
+AI texts went from **3 of 3 labelled AI** at 0.70 to **1 of 3** at 0.80 (0.755
+and 0.797 are now `unsure`). Criteria 2, 3 and 5 were unaffected, and
+criterion 4 stayed missed both ways, because the change moved the AI line,
+not the human one.
+
 
 ---
 
 ## What's Still Broken
 
-<!-- For each attack still getting through and each criterion still missed:
-     what you'd do, and why you stopped. -->
-
-
+| Still broken | What I'd do | Why I stopped |
+|---|---|---|
+| Criterion 1 never tested | Collect 10 pieces of my own writing, uncomment the scenario in `scenarios.py`, and run `run_eval.py` again. | I didn't supply the samples in time. Until it runs, I can't say whether my most important criterion holds. |
+| Criterion 4: `human` unreachable for human text | Recalibrate `HUMAN_THRESHOLD` against real human writing (it sits under where human text lands), and stop the disagreement rule pulling low-model-score text back toward 0.5. | That would be a second change to the scoring, and the unit allows one, so the before/after stays comparable. |
+| Evasion: 9 of 10 still get through | Problem 1: make signal two harder to game, e.g. count punctuation per sentence instead of per word, and ignore single outlier sentences in the spread. Problem 3: score sections separately so a bolted-on human paragraph (EV09) can't dilute the rest. | Each is a signal change. Problem 2 (signal one reads anything odd as human) has no cheap fix: perplexity-based detection is built on exactly the property the attacks exploit. |
+| Prompt injection: 3 of 6 still lower the score | Strip lines that look like instructions or system messages ("SYSTEM:", "ignore…") before scoring, and log that they were removed. | It's an input-cleaning change, a second improvement. It also risks removing real writing that happens to contain those words. |
+| AI band now very narrow (only 0.80+) | This is the cost of my fix. I'd accept it rather than go back to accusing formal human writers, but pair it with a better signal so AI text scores higher. | Moving the threshold again would undo the one change I measured. |
+| Malformed rows RQ10/RQ11 never reached the route | Run them again from a fresh address, or give address-limited requests their own bucket, so the route's handling is actually tested. | It's a test gap, not a service failure. Both got a 4xx and nothing crashed. |
 
 **The trade I'd make if this ran for real:**
 
-<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
-     Say which way you'd go and WHO PAYS FOR IT. -->
+If I deployed Provenance Guard in a real environment, I would prioritize
+reducing false positives, even if that meant the system failed to identify
+some AI-generated content. I believe protecting people from incorrect
+accusations is more important than maximizing the number of AI-generated
+submissions detected. The people who pay for that choice are the writers
+competing against undetected AI text, and the site's readers. Writers who
+would otherwise have been wrongly accused don't pay it.
 
-
+I would also keep the `uncertain` classification and appeals process because
+they allow the application to acknowledge its limitations instead of
+presenting every prediction as a fact.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
