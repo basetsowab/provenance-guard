@@ -112,6 +112,13 @@ def main():
 
         trials = []
         for trial in range(1, args.trials + 1):
+            if scenario.get("appeals"):
+                results = run_appeals(scenario, trial, args, requests)
+                trials.append(results)
+                marks = [r.get("log_status") or "—" for r in results]
+                print(f"  trial {trial}: {', '.join(marks)}")
+                continue
+
             results = []
             for i, body in enumerate(bodies_for(scenario), 1):
                 preview = describe(body)
@@ -139,6 +146,51 @@ def main():
         rows.append({"scenario": scenario, "trials": trials})
 
     write_report(rows, args)
+
+
+def run_appeals(scenario, trial, args, requests):
+    """
+    The appeal path, end to end: submit, appeal the content_id that came back,
+    then read GET /log to see whether the status really moved.
+
+    An "appeals" scenario is a list of texts. Each trial uses fresh creator_ids
+    so the three trials don't share one rate-limit bucket.
+    """
+    results = []
+    for i, text in enumerate(scenario["appeals"], 1):
+        record = {"sent": text[:70]}
+        try:
+            body = {"text": text, "creator_id": f"eval_appeal_t{trial}_{i}"}
+            sub = requests.post(f"{args.url}/submit", json=body, timeout=args.timeout)
+            sub_payload = sub.json() if sub.content else {}
+            content_id = sub_payload.get("content_id")
+            record.update({"submit_status": sub.status_code,
+                           "content_id": content_id,
+                           "guess": sub_payload.get("guess")})
+            if not content_id:
+                results.append(record)
+                continue
+
+            app_resp = requests.post(
+                f"{args.url}/appeal",
+                json={"content_id": content_id,
+                      "reasoning": scenario.get("reasoning", "I wrote this myself.")},
+                timeout=args.timeout)
+            app_payload = app_resp.json() if app_resp.content else {}
+            record.update({"appeal_status": app_resp.status_code,
+                           "appeal_response_status": app_payload.get("status")})
+
+            log = requests.get(f"{args.url}/log", timeout=args.timeout).json()
+            mine = [e for e in log.get("entries", []) if e.get("content_id") == content_id]
+            record.update({
+                "log_entries": len(mine),
+                "appeal_logged": any(e.get("event") == "appeal" for e in mine),
+                "log_status": mine[-1].get("status") if mine else None,
+            })
+        except Exception as exc:  # noqa: BLE001
+            record["error"] = f"{type(exc).__name__}: {exc}"
+        results.append(record)
+    return results
 
 
 def write_report(rows, args):
